@@ -1,6 +1,9 @@
 package com.goddard.goddardpdf;
 
 import javafx.application.Application;
+import javafx.application.Platform;
+import javafx.beans.value.ChangeListener;
+import javafx.beans.value.ObservableValue;
 import javafx.collections.FXCollections;
 import javafx.collections.ObservableList;
 import javafx.embed.swing.SwingFXUtils;
@@ -29,45 +32,61 @@ public class Main extends Application {
     private Button nextButton;
     private ChoiceBox<String> pageSelect;
     private ObservableList<String> pageSelectContents;
+    public Slider zoom;
+    private HBox controls;
 
     public static void main(String[] args) { launch(args); }
 
     @Override
     public void start(Stage primaryStage) {
-        primaryStage.setTitle("GoddardPDF");
+        primaryStage.setTitle("Goddard PDF");
 
         BorderPane root = new BorderPane();
         pdfView = new ImageView();
         pdfView.setPreserveRatio(true);
-        ScrollPane scrollPane = new ScrollPane(pdfView);
+        ZoomableScrollPane scrollPane = new ZoomableScrollPane(pdfView);
         root.setCenter(scrollPane);
 
         Menu file = new Menu("File");
 
         MenuItem open = new MenuItem("Open");
+        MenuItem exit = new MenuItem("Exit");
+
         open.setOnAction(e -> openPDF(primaryStage));
-        file.getItems().add(open);
+        exit.setOnAction(e -> Platform.exit());
+
+        file.getItems().addAll(open, exit);
 
         MenuBar menuBar = new MenuBar(file);
 
-        HBox controls = new HBox(10);
+        controls = new HBox(10);
         controls.setPadding(new Insets(10));
 
         pageSelectContents = FXCollections.observableArrayList();
 
-        prevButton = new Button("Previous");
-        nextButton = new Button("Next");
+        prevButton = new Button("Previous Page");
+        nextButton = new Button("Next Page");
         pageSelect = new ChoiceBox<>(pageSelectContents);
+        zoom = new Slider(0f, 1f, 0.5f);
 
-        prevButton.setDisable(true);
-        nextButton.setDisable(true);
-        pageSelect.setDisable(true);
+        zoom.setShowTickLabels(true);
+        zoom.setMajorTickUnit(0.5f);
+        zoom.valueProperty().addListener(
+            new ChangeListener<>() {
+                public void changed(ObservableValue<? extends Number>observable, Number oldValue, Number newValue) {
+                    scrollPane.scaleValue = (double) newValue;
+                    scrollPane.updateScale();
+                }
+            }
+        );
+
 
         prevButton.setOnAction(e -> showPage(currentPage - 1));
         nextButton.setOnAction(e -> showPage(currentPage + 1));
         pageSelect.setOnAction(e -> showPage(pageSelect.getSelectionModel().getSelectedIndex()));
 
-        controls.getChildren().addAll(prevButton, nextButton, pageSelect);
+        controls.getChildren().addAll(prevButton, nextButton, pageSelect, zoom);
+        controls.getChildren().forEach(n -> n.setDisable(true));
 
         root.setTop(menuBar);
         root.setBottom(controls);
@@ -85,11 +104,9 @@ public class Main extends Application {
             try {
                 document = PDDocument.load(file);
                 currentPage = 0;
-                nextButton.setDisable(false);
-                prevButton.setDisable(false);
-                pageSelect.setDisable(false);
+                controls.getChildren().forEach(n -> n.setDisable(false));
                 pageSelectContents.clear();
-                for (int i = 0; i < document.getNumberOfPages(); i++) pageSelectContents.add(Integer.toString(i + 1));
+                for (int i=0; i < document.getNumberOfPages(); i++) pageSelectContents.add(Integer.toString(i + 1));
                 pageSelect.getSelectionModel().selectFirst();
                 showPage(currentPage);
             } catch (IOException e) { showError("Failed to open PDF: " + e.getMessage()); }
@@ -101,7 +118,7 @@ public class Main extends Application {
 
         try {
             PDFRenderer renderer = new PDFRenderer(document);
-            BufferedImage image = renderer.renderImageWithDPI(pageIndex, 300);
+            BufferedImage image = renderer.renderImageWithDPI(pageIndex, 600);
             pdfView.setImage(SwingFXUtils.toFXImage(image, null));
             currentPage = pageIndex;
             nextButton.setDisable(currentPage + 1 == document.getNumberOfPages());
