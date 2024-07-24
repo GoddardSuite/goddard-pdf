@@ -6,23 +6,26 @@ import javafx.geometry.Pos;
 import javafx.scene.Group;
 import javafx.scene.Node;
 import javafx.scene.control.ScrollPane;
+import javafx.scene.control.Slider;
 import javafx.scene.layout.VBox;
 
 public class ZoomableScrollPane extends ScrollPane {
-    public double scaleValue = 0.7;
+    public double scaleValue = 0.5;
     public double zoomIntensity = 0.04;
     public Node target;
     public Node zoomNode;
+    private final Slider zoomSlider;
 
-    public ZoomableScrollPane(Node target) {
+    public ZoomableScrollPane(Node target, Slider zoom) {
         super();
         this.target = target;
         this.zoomNode = new Group(target);
+        this.zoomSlider = zoom;
         setContent(outerNode(zoomNode));
 
         setPannable(true);
-        setHbarPolicy(ScrollPane.ScrollBarPolicy.AS_NEEDED);
-        setVbarPolicy(ScrollPane.ScrollBarPolicy.AS_NEEDED);
+        setHbarPolicy(ScrollBarPolicy.AS_NEEDED);
+        setVbarPolicy(ScrollBarPolicy.AS_NEEDED);
         setFitToHeight(true);
         setFitToWidth(true);
 
@@ -58,7 +61,7 @@ public class ZoomableScrollPane extends ScrollPane {
         double valX = this.getHvalue() * (innerBounds.getWidth() - viewportBounds.getWidth());
         double valY = this.getVvalue() * (innerBounds.getHeight() - viewportBounds.getHeight());
 
-        scaleValue = scaleValue * zoomFactor;
+        scaleValue = Math.clamp(scaleValue * zoomFactor, 0, 1);
         updateScale();
         this.layout();
 
@@ -69,5 +72,7 @@ public class ZoomableScrollPane extends ScrollPane {
         Bounds updatedInnerBounds = zoomNode.getBoundsInLocal();
         this.setHvalue((valX + adjustment.getX()) / (updatedInnerBounds.getWidth() - viewportBounds.getWidth()));
         this.setVvalue((valY + adjustment.getY()) / (updatedInnerBounds.getHeight() - viewportBounds.getHeight()));
+
+        zoomSlider.valueProperty().setValue((Number) scaleValue);
     }
 }
