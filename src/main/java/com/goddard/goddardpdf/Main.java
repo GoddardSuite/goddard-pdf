@@ -8,8 +8,15 @@ import javafx.embed.swing.SwingFXUtils;
 import javafx.geometry.Insets;
 import javafx.scene.Scene;
 import javafx.scene.control.*;
+import javafx.scene.control.Button;
+import javafx.scene.control.Label;
+import javafx.scene.control.Menu;
+import javafx.scene.control.MenuBar;
+import javafx.scene.control.MenuItem;
+import javafx.scene.control.ScrollPane;
 import javafx.scene.image.ImageView;
 import javafx.scene.layout.BorderPane;
+import javafx.scene.layout.GridPane;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.VBox;
 import javafx.stage.FileChooser;
@@ -168,6 +175,24 @@ public class Main extends Application {
     private void thumbnails() {
         root.setBottom(null);
 
+        GridPane gridPane = new GridPane();
+        ScrollPane main = new ScrollPane(gridPane);
+        root.setCenter(main);
+
+        PDFRenderer renderer = new PDFRenderer(document);
+
+        for (int i=0; i < document.getNumberOfPages();i++) {
+            try {
+                BufferedImage image = renderer.renderImageWithDPI(i, 300);
+                ImageView pageView = new ImageView();
+                pageView.setImage(SwingFXUtils.toFXImage(image, null));
+                GridPane.setColumnIndex(pageView, i / 4);
+                GridPane.setColumnIndex(pageView, i % 4);
+            } catch (IOException e) { showError("Failed to open PDF: " + e.getMessage()); }
+        }
+
+        save.setDisable(false);
+        export.setDisable(false);
     }
 
     private void continuousScroll() {
