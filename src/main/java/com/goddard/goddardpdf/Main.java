@@ -7,18 +7,16 @@ import javafx.collections.ObservableList;
 import javafx.concurrent.Task;
 import javafx.embed.swing.SwingFXUtils;
 import javafx.geometry.Insets;
+import javafx.geometry.Pos;
 import javafx.scene.Scene;
-import javafx.scene.control.ChoiceBox;
-import javafx.scene.control.Slider;
+import javafx.scene.control.*;
 import javafx.scene.control.Button;
 import javafx.scene.control.Label;
-import javafx.scene.control.Alert;
-import javafx.scene.control.ProgressBar;
 import javafx.scene.control.Menu;
 import javafx.scene.control.MenuBar;
 import javafx.scene.control.MenuItem;
-import javafx.scene.control.CheckMenuItem;
 import javafx.scene.control.ScrollPane;
+import javafx.scene.control.TextArea;
 import javafx.scene.image.ImageView;
 import javafx.scene.layout.*;
 import javafx.stage.FileChooser;
@@ -34,6 +32,7 @@ import java.awt.image.BufferedImage;
 import java.io.File;
 import java.io.IOException;
 import java.util.Objects;
+import java.nio.file.Files;
 
 public class Main extends Application {
 
@@ -70,6 +69,7 @@ public class Main extends Application {
   private MenuBar getMenuItems() {
     Menu file = new Menu("File");
     view = new Menu("View");
+    Menu help = new Menu("Help");
 
     MenuItem open = new MenuItem("Open");
     save = new MenuItem("Save");
@@ -95,20 +95,23 @@ public class Main extends Application {
     CheckMenuItem thumbnails = new CheckMenuItem("Thumbnails");
     CheckMenuItem scroll = new CheckMenuItem("Continuous Scroll");
 
+    MenuItem about = new MenuItem("About");
+
+    about.setOnAction(actionEvent -> showInfo("Goddard PDF v0.1\nCopyright © 2024 Kummin König Ludwig Gorgonzola"));
+
     file.getItems().addAll(open, save, export, exit);
     view.getItems().addAll(pageByPage, slideshow, thumbnails, scroll);
+    help.getItems().addAll(about);
 
     pageByPage.setSelected(true);
     view.getItems().forEach(item -> item.setDisable(true));
     view.getItems().forEach(item -> item.setOnAction(actionEvent -> setViewMode(item.getText(), view)));
 
-    return new MenuBar(file, view);
+    return new MenuBar(file, view, help);
   }
 
   private void setViewMode(String mode, Menu view) {
-    view.getItems().forEach(item -> {
-      if (item instanceof CheckMenuItem && !Objects.equals(item.getText(), mode)) ((CheckMenuItem) item).setSelected(false);
-    });
+    view.getItems().forEach(item -> { if (!Objects.equals(item.getText(), mode)) ((CheckMenuItem) item).setSelected(false); });
 
     switch (mode) {
       case "Page by Page" -> pageByPage();
@@ -121,6 +124,7 @@ public class Main extends Application {
   private void pageByPage() {
     HBox controls = new HBox(10);
     controls.setPadding(new Insets(10));
+    controls.setAlignment(Pos.CENTER_LEFT);
 
     ObservableList<String> pageSelectContents = FXCollections.observableArrayList();
 
@@ -182,12 +186,9 @@ public class Main extends Application {
     main.setFitToHeight(true);
     root.setCenter(main);
 
-    // Load the images initially
     loadThumbnails(gridPane);
 
-    primaryStage.widthProperty().addListener((observable, oldValue, newValue) -> {
-      repositionThumbnails(gridPane);
-    });
+    primaryStage.widthProperty().addListener((observable) -> repositionThumbnails(gridPane));
 
     save.setDisable(false);
     export.setDisable(false);
@@ -197,13 +198,15 @@ public class Main extends Application {
     PDFRenderer renderer = new PDFRenderer(document);
     int numPages = document.getNumberOfPages();
 
-    Task<Void> loadImagesTask = new Task<Void>() {
+    final boolean[] taskRunning = {true};
+
+    Task<Void> loadImagesTask = new Task<>() {
       @Override
       protected Void call() {
         for (int i = 0; i < numPages; i++) {
           if (isCancelled()) break;
           try {
-            BufferedImage image = renderer.renderImageWithDPI(i, 60);
+            BufferedImage image = renderer.renderImage(i);
             javafx.scene.image.Image fxImage = SwingFXUtils.toFXImage(image, null);
 
             final int index = i;
@@ -212,11 +215,27 @@ public class Main extends Application {
               pageView.setPreserveRatio(true);
               gridPane.getChildren().add(pageView);
               repositionThumbnails(gridPane);
+
+              String selectedStyle = "-fx-effect: dropshadow(gaussian, #0d98ba, 10, 0.5, 0, 0);";
+
+              pageView.setOnMouseClicked(event -> {
+                if (event.getClickCount() == 2) {
+                  if (!taskRunning[0]) {
+                    setViewMode("Page by Page", view);
+                    showPage(index, true);
+                  }
+                } else if (event.getClickCount() == 1) {
+                  if (!taskRunning[0]) {
+                    gridPane.getChildren().forEach(node -> node.setStyle(""));
+                    pageView.setStyle(selectedStyle);
+                    pageView.toFront();
+                  }
+                }
+              });
             });
-          } catch (IOException e) {
-            Platform.runLater(() -> showError("Failed to open PDF: " + e.getMessage()));
-          }
+          } catch (IOException e) { Platform.runLater(() -> showError("Failed to open PDF", e.getMessage())); }
         }
+        taskRunning[0] = false;
         return null;
       }
     };
@@ -240,6 +259,37 @@ public class Main extends Application {
 
   private void continuousScroll() {
     root.setBottom(null);
+    pdfView.setImage(null);
+
+    VBox pageBox = new VBox();
+    ScrollPane main = new ScrollPane(pageBox);
+
+    root.setCenter(main);
+
+    PDFRenderer renderer = new PDFRenderer(document);
+    int numPages = document.getNumberOfPages();
+
+    Task<Void> loadImagesTask = new Task<>() {
+      @Override
+      protected Void call() {
+        for (int i = 0; i < numPages; i++) {
+          if (isCancelled()) break;
+          try {
+            BufferedImage image = renderer.renderImage(i);
+            javafx.scene.image.Image fxImage = SwingFXUtils.toFXImage(image, null);
+
+            Platform.runLater(() -> {
+              ImageView pageView = new ImageView(fxImage);
+              pageView.setPreserveRatio(true);
+              pageBox.getChildren().add(pageView);
+            });
+          } catch (IOException e) { Platform.runLater(() -> showError("Failed to open PDF", e.getMessage())); }
+        }
+        return null;
+      }
+    };
+
+    new Thread(loadImagesTask).start();
   }
 
   private void openPDF() {
@@ -253,7 +303,7 @@ public class Main extends Application {
         document = PDDocument.load(file);
         primaryStage.setTitle(file.getName());
         pageByPage();
-      } catch (IOException e) { showError("Failed to open PDF: " + e.getMessage()); }
+      } catch (IOException e) { showError("Failed to open PDF", e.getMessage()); }
     }
   }
 
@@ -270,20 +320,32 @@ public class Main extends Application {
         prevButton.setDisable(currentPage == 0);
         pageSelect.getSelectionModel().select(pageIndex);
       }
-    } catch (IOException e) { showError("Failed to render page: " + e.getMessage()); }
+    } catch (IOException e) { showError("Failed to render page", e.getMessage()); }
   }
 
-  private void showError(String message) {
+  private void showError(String message, String error) {
+    TextArea stackTrace = new TextArea(error);
+    stackTrace.setEditable(false);
+    stackTrace.setMaxWidth(Double.MAX_VALUE);
+    stackTrace.setMaxHeight(Double.MAX_VALUE);
+
     Alert alert = new Alert(Alert.AlertType.ERROR);
-    alert.setContentText(message);
+    alert.setTitle("Error");
+    alert.setHeaderText(message);
+
+    DialogPane dialogPane = alert.getDialogPane();
+    dialogPane.setExpandableContent(stackTrace);
+    dialogPane.setExpanded(true);
+
     alert.showAndWait();
   }
+
 
   private void export(String fileType) {
     FileChooser fileChooser = new FileChooser();
     fileChooser.setInitialDirectory(new File(System.getProperty("user.home")));
     fileChooser.getExtensionFilters().add(
-            new FileChooser.ExtensionFilter(fileType + " Files", "*." + fileType.toLowerCase())
+      new FileChooser.ExtensionFilter(fileType + " Files", "*." + fileType.toLowerCase())
     );
 
     File file = fileChooser.showSaveDialog(null);
@@ -294,7 +356,7 @@ public class Main extends Application {
         try {
           document.save(file);
           showInfo("PDF exported successfully!");
-        } catch (IOException e) { showError("Failed to export PDF: " + e.getMessage()); }
+        } catch (IOException e) { showError("Failed to export PDF", e.getMessage()); }
       }
       case "PNG", "JPEG" -> {
         Stage progressStage = new Stage();
@@ -324,7 +386,7 @@ public class Main extends Application {
               });
             } catch (IOException e) {
               Platform.runLater(() -> {
-                showError("Failed to export images: " + e.getMessage());
+                showError("Failed to export images", e.getMessage());
                 progressStage.close();
               });
               return;
@@ -339,20 +401,18 @@ public class Main extends Application {
       case "TXT" -> {
         StringBuilder textContent = new StringBuilder();
         try {
-          for (int i = 0; i < document.getNumberOfPages(); i++) {
-            textContent.append(new PDFTextStripper().getText(document));
-          }
-          java.nio.file.Files.write(file.toPath(), textContent.toString().getBytes());
+          int pages = document.getNumberOfPages();
+          for (int i = 0; i < pages; i++) { textContent.append(new PDFTextStripper().getText(document)); }
+          Files.write(file.toPath(), textContent.toString().getBytes());
           showInfo("Text exported successfully!");
-        } catch (IOException e) {
-          showError("Failed to export TXT: " + e.getMessage());
-        }
+        } catch (IOException e) { showError("Failed to export TXT", e.getMessage()); }
       }
     }
   }
 
   private void showInfo(String message) {
     Alert alert = new Alert(Alert.AlertType.INFORMATION);
+    alert.setHeaderText(null);
     alert.setContentText(message);
     alert.showAndWait();
   }
